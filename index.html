@@ -1,0 +1,151 @@
+<!-- /index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Major Scales Quiz</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- PDF generation (client-side) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+</head>
+
+<body>
+  <div class="app" id="appRoot">
+    <header class="hero">
+      <picture class="heroTitle">
+        <source media="(max-width: 520px)" srcset="images/titlewrapped.png" />
+        <img class="heroTitleImg" src="images/title.png" alt="Major Scales Quiz" />
+      </picture>
+
+      <p class="app-subtitle">
+        Identify the notes of each <strong>major scale</strong> across a full <strong>octave</strong> (1st–8th).
+      </p>
+    </header>
+
+    <!-- Loading / begin modal -->
+    <div id="beginModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="beginTitle">
+      <div class="modalCard" role="document">
+        <div class="modalHeader">
+          <h2 id="beginTitle">Welcome! 👋</h2>
+        </div>
+
+        <div class="modalBody">
+          <p>
+            You’ll be asked to identify the <strong>notes of major scales</strong>.
+            For each question, click the piano keys to select all <strong>7 scale degrees</strong> (and you may include the <strong>root</strong> again as the 8th).
+          </p>
+
+          <div class="beginOptions" aria-label="print options">
+            <div class="beginOptionRow">
+              <label class="beginLabel" for="questionCountSelect">Number of questions (max 12)</label>
+              <select id="questionCountSelect" class="beginSelect" aria-label="Number of questions">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8" selected>8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+              </select>
+            </div>
+
+            <div class="beginAdvice" id="pageAdvice">—</div>
+          </div>
+        </div>
+
+        <div class="modalFooter">
+          <button id="beginBtn" class="primary pulse" type="button">Begin Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top controls -->
+    <section class="controlsPanel controlsPanelActions" aria-label="top actions">
+      <div class="actionsRow actionsCentered">
+        <button id="infoBtn" type="button">Information</button>
+        <button id="downloadTaskBtn" type="button" disabled>Download as A4 task sheet</button>
+        <button id="downloadScorecardBtn" type="button" disabled>Download scorecard</button>
+        <button id="resetBtn" type="button" disabled>Reset game</button>
+      </div>
+    </section>
+
+    <!-- Quiz -->
+    <main class="quizWrap" aria-label="quiz">
+      <div class="quizHeaderRow">
+        <div class="quizTitle" id="quizTitle">
+          <img class="questionsBadge" src="images/questions.png" alt="Questions" />
+          <div id="kbdModeHint" class="kbdModeHint">
+            Highlight the notes of the <strong>scales</strong> for each question on the keyboards —
+            select all <strong>7 scale degrees</strong> (and you may include the <strong>root</strong> again as the 8th), placing the <strong>scale</strong> on any octave.
+          </div>
+        </div>
+        <div class="quizMeta" id="quizMeta">—</div>
+      </div>
+
+      <ol id="questionsList" class="questionsList questionsListSingle" aria-label="questions"></ol>
+
+      <section class="controlsPanel controlsPanelActions" aria-label="submit">
+        <div class="actionsRow actionsCentered">
+          <button id="submitBtn" class="primary" type="button" disabled>Submit Answers</button>
+        </div>
+      </section>
+
+      <section id="resultsPanel" class="resultsPanel hidden" aria-label="results">
+        <div class="analysisCard">
+          <div class="analysisLabel">Results</div>
+          <div class="analysisBody" id="resultsSummary">—</div>
+        </div>
+
+        <section class="controlsPanel controlsPanelActions" aria-label="post actions">
+          <div class="actionsRow actionsCentered">
+            <button id="resetBtn2" type="button">Reset game</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <!-- Info modal -->
+    <div id="infoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+      <div class="modalCard" role="document">
+        <div class="modalHeader">
+          <h2 id="infoTitle">More information 🧐</h2>
+        </div>
+
+        <div class="modalBody">
+          <p>
+            The <strong>Major scale</strong> forms the foundation of the vast majority of Western music, across many genres. In short, a musical scale is the path of notes we take from one pitch to another, generally (but not always) spanninng an octave, after which they will usually repeat.
+            <Br>Specifically the Major scale can be built using a formula of tones and semitons (called whole-steps and half-steps for our North American friends) from any one pitch to the same pitch an octave above.</p>
+            <p>This <strong>major scale</strong> formula can be written as:
+            <br><strong>T T S T T T S</strong>
+            <br>(or for our friends in the US and Canada)
+            <br> <strong>W W H W W W H</strong>
+          </p>
+          <p>
+            In this quiz you select the <strong>7 different notes</strong> that belong to the Major scale in question. You can choose to select all 8 notes in a full octave (ie the root and the 8th scale degree an octave above), this will also be counted as correct!
+          </p>
+        </div>
+
+        <div class="modalFooter">
+          <button id="infoOk" class="primary" type="button">Got it!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden task-sheet template (used for PDF generation) -->
+    <div id="taskSheetTemplate" class="hidden" aria-hidden="true"></div>
+
+    <!-- Hidden scorecard template (used for PDF generation) -->
+    <div id="scorecardTemplate" class="hidden" aria-hidden="true"></div>
+  </div>
+
+  <script defer src="script.js"></script>
+</body>
+</html>

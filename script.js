@@ -684,7 +684,7 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
         : `${TASK_Q_PER_PAGE} per page (last page ${qCount % TASK_Q_PER_PAGE || TASK_Q_PER_PAGE})`;
 
     if (pageAdvice) {
-      pageAdvice.textContent = `PDF tip: ${qCount} questions → ${pages} A4 page(s), ${perPage}.`;
+      pageAdvice.textContent = `Task sheet download printing tip: ${qCount} questions → ${pages} A4 page(s), ${perPage}.`;
     }
   }
 

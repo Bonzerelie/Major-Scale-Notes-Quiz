@@ -329,14 +329,14 @@ button:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
 }
 
 /* Modal */
-.modal{
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(0,0,0,.55);
-  z-index: 1000;
-  padding: 18px;
+.modal {
+  position: absolute; /* Changed from fixed */
+  top: 0; bottom: 0; left: 0; right: 0; /* Replaces inset: 0 for broader compatibility */
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 60px; padding-left: 10px; padding-right: 10px;
+  z-index: 50; 
+  /* Removed overflow, overscroll-behavior, and webkit-overflow-scrolling */
 }
 .modal.hidden{ display:none; }
 .modalCard{

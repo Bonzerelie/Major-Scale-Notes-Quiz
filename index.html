@@ -1,4 +1,3 @@
-<!-- /index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,7 +6,6 @@
   <title>Major Scales Quiz</title>
   <link rel="stylesheet" href="style.css" />
 
-  <!-- PDF generation (client-side) -->
   <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
@@ -25,7 +23,6 @@
       </p>
     </header>
 
-    <!-- Loading / begin modal -->
     <div id="beginModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="beginTitle">
       <div class="modalCard" role="document">
         <div class="modalHeader">
@@ -67,7 +64,6 @@
       </div>
     </div>
 
-    <!-- Top controls -->
     <section class="controlsPanel controlsPanelActions" aria-label="top actions">
       <div class="actionsRow actionsCentered">
         <button id="infoBtn" type="button">Information</button>
@@ -77,7 +73,10 @@
       </div>
     </section>
 
-    <!-- Quiz -->
+    <section class="keyboardWrap" aria-label="piano keyboard">
+      <div id="topKeyboardMount" class="mount topKeyboardMount" aria-label="Interactive keyboard"></div>
+    </section>
+
     <main class="quizWrap" aria-label="quiz">
       <div class="quizHeaderRow">
         <div class="quizTitle" id="quizTitle">
@@ -90,7 +89,7 @@
         <div class="quizMeta" id="quizMeta">—</div>
       </div>
 
-      <ol id="questionsList" class="questionsList questionsListSingle" aria-label="questions"></ol>
+      <ol id="questionsList" class="questionsList" aria-label="questions"></ol>
 
       <section class="controlsPanel controlsPanelActions" aria-label="submit">
         <div class="actionsRow actionsCentered">
@@ -112,7 +111,6 @@
       </section>
     </main>
 
-    <!-- Info modal -->
     <div id="infoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
       <div class="modalCard" role="document">
         <div class="modalHeader">
@@ -139,10 +137,8 @@
       </div>
     </div>
 
-    <!-- Hidden task-sheet template (used for PDF generation) -->
     <div id="taskSheetTemplate" class="hidden" aria-hidden="true"></div>
 
-    <!-- Hidden scorecard template (used for PDF generation) -->
     <div id="scorecardTemplate" class="hidden" aria-hidden="true"></div>
   </div>
 

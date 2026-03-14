@@ -7,45 +7,39 @@
   const FADE_OUT_SEC = 0.12;
   const LIMITER_THRESHOLD_DB = -6;
 
-  // Per-question input keyboard: 3 octaves (large / easy to use)
-  const Q_KBD_START_OCT = 3; // C3
-  const Q_KBD_OCTAVES = 3;
+  // Reference keyboard at top
+  const KBD_START_OCT = 3;
+  const KBD_OCTAVES = 3;
+
+  // Per-question input keyboard - reduced to 2 for larger keys
+  const Q_KBD_START_OCT = 3; 
+  const Q_KBD_OCTAVES = 2;
   const Q_KBD_INCLUDE_END_C = true;
 
-  
   // Scale selection rules
   const SCALE_UNIQUE_DEGREES = 7; // 1..7
   const SCALE_ALLOW_OCTAVE_ROOT = true; // allow selecting the root twice (octave)
   const SCALE_MAX_SELECTIONS = SCALE_UNIQUE_DEGREES + (SCALE_ALLOW_OCTAVE_ROOT ? 1 : 0);
-// Results mini keyboards: 3 octaves C3..B5 (+ final C)
+
+  // Results mini keyboards - reduced to 2
   const MINI_KBD_START_OCT = 3;
-  const MINI_KBD_OCTAVES = 3;
+  const MINI_KBD_OCTAVES = 2;
   const MINI_KBD_INCLUDE_END_C = true;
 
-  // Task sheet printed keyboards
+  // Task sheet printed keyboards - reduced to 2
   const TASK_KBD_START_OCT = 3;
-  const TASK_KBD_OCTAVES = 3;
+  const TASK_KBD_OCTAVES = 2;
   const TASK_KBD_INCLUDE_END_C = true;
 
-  // Task sheet questions per page (single column, bigger questions)
-  const TASK_Q_PER_PAGE = 4;
+  // Task sheet questions per page (2 columns matching other games)
+  const TASK_Q_PER_PAGE = 10;
 
   // PDF margins (pt)
   const PDF_MARGIN_PT = 18;
 
   const PC_TO_STEM = {
-    0: "c",
-    1: "csharp",
-    2: "d",
-    3: "dsharp",
-    4: "e",
-    5: "f",
-    6: "fsharp",
-    7: "g",
-    8: "gsharp",
-    9: "a",
-    10: "asharp",
-    11: "b",
+    0: "c", 1: "csharp", 2: "d", 3: "dsharp", 4: "e", 5: "f",
+    6: "fsharp", 7: "g", 8: "gsharp", 9: "a", 10: "asharp", 11: "b",
   };
 
   const PC_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -71,6 +65,8 @@
   const resetBtn = $("resetBtn");
   const resetBtn2 = $("resetBtn2");
 
+  const topKeyboardMount = $("topKeyboardMount");
+
   const quizMeta = $("quizMeta");
   const questionsList = $("questionsList");
   const submitBtn = $("submitBtn");
@@ -88,6 +84,11 @@
 
   const bufferPromiseCache = new Map();
   const activeVoices = new Set();
+
+  function playUiSound(filename) {
+    const audio = new Audio(`${AUDIO_DIR}/${filename}`);
+    audio.play().catch(() => {});
+  }
 
   function ensureAudioGraph() {
     if (audioCtx) return audioCtx;
@@ -203,82 +204,90 @@
   }
 
   function playBufferWindowed(buffer, whenSec, playSec, fadeOutSec, gain = 1, fadeStartAtSec = null) {
-  const ctx = ensureAudioGraph();
-  if (!ctx || !masterGain) return null;
+    const ctx = ensureAudioGraph();
+    if (!ctx || !masterGain) return null;
 
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
 
-  const g = ctx.createGain();
-  const safeGain = Math.max(0, Number.isFinite(gain) ? gain : 1);
+    const g = ctx.createGain();
+    const safeGain = Math.max(0, Number.isFinite(gain) ? gain : 1);
 
-  const fadeIn = 0.01;
-  const endAt = whenSec + Math.max(0.05, playSec);
+    const fadeIn = 0.01;
+    const endAt = whenSec + Math.max(0.05, playSec);
 
-  g.gain.setValueAtTime(0, whenSec);
-  g.gain.linearRampToValueAtTime(safeGain, whenSec + fadeIn);
+    g.gain.setValueAtTime(0, whenSec);
+    g.gain.linearRampToValueAtTime(safeGain, whenSec + fadeIn);
 
-  const fadeOut = Math.max(0.01, Number.isFinite(fadeOutSec) ? fadeOutSec : 0.06);
+    const fadeOut = Math.max(0.01, Number.isFinite(fadeOutSec) ? fadeOutSec : 0.06);
 
-  const fadeStart = Number.isFinite(fadeStartAtSec)
-    ? Math.max(whenSec + 0.02, Math.min(fadeStartAtSec, endAt - 0.001))
-    : Math.max(whenSec + 0.02, endAt - Math.max(0.06, fadeOut));
+    const fadeStart = Number.isFinite(fadeStartAtSec)
+      ? Math.max(whenSec + 0.02, Math.min(fadeStartAtSec, endAt - 0.001))
+      : Math.max(whenSec + 0.02, endAt - Math.max(0.06, fadeOut));
 
-  g.gain.setValueAtTime(safeGain, fadeStart);
-  g.gain.linearRampToValueAtTime(0, Math.min(endAt, fadeStart + fadeOut));
+    g.gain.setValueAtTime(safeGain, fadeStart);
+    g.gain.linearRampToValueAtTime(0, Math.min(endAt, fadeStart + fadeOut));
 
-  src.connect(g);
-  g.connect(masterGain);
+    src.connect(g);
+    g.connect(masterGain);
 
-  trackVoice(src, g, whenSec);
-  src.start(whenSec);
-  src.stop(endAt + 0.03);
-  return src;
-}
+    trackVoice(src, g, whenSec);
+    src.start(whenSec);
+    src.stop(endAt + 0.03);
+    return src;
+  }
 
   async function playPitchesSequentialOverlap(pitches, stepSec = 0.4, fadeOutSec = 0.03, lastTailSec = 1.0) {
-  await resumeAudioIfNeeded();
-  const ctx = ensureAudioGraph();
-  if (!ctx) return false;
+    await resumeAudioIfNeeded();
+    const ctx = ensureAudioGraph();
+    if (!ctx) return false;
 
-  const when0 = ctx.currentTime + 0.03;
-  const seq = (Array.isArray(pitches) ? pitches : []).map((p) => Math.round(p));
+    const when0 = ctx.currentTime + 0.03;
+    const seq = (Array.isArray(pitches) ? pitches : []).map((p) => Math.round(p));
 
-  const results = await Promise.all(seq.map(loadPitchBuffer));
-  const missing = results.find((r) => r?.missingUrl);
-  if (missing?.missingUrl) {
-    alert(`Missing audio sample: ${missing.missingUrl}`);
-    return false;
-  }
-
-  const bufs = results.map((r) => r?.buffer);
-  if (!bufs.length || bufs.some((b) => !b)) return false;
-
-  const perNoteGain = 0.8;
-
-  for (let i = 0; i < bufs.length; i++) {
-    const start = when0 + i * stepSec;
-    const isLast = i === bufs.length - 1;
-
-    if (isLast) {
-      const playSec = Math.max(0.05, lastTailSec);
-      playBufferWindowed(bufs[i], start, playSec, fadeOutSec, perNoteGain, start + playSec - fadeOutSec);
-    } else {
-      const nextStart = when0 + (i + 1) * stepSec;
-      const playSec = Math.max(0.05, (nextStart - start) + fadeOutSec);
-      playBufferWindowed(bufs[i], start, playSec, fadeOutSec, perNoteGain, nextStart);
+    const results = await Promise.all(seq.map(loadPitchBuffer));
+    const missing = results.find((r) => r?.missingUrl);
+    if (missing?.missingUrl) {
+      alert(`Missing audio sample: ${missing.missingUrl}`);
+      return false;
     }
+
+    const bufs = results.map((r) => r?.buffer);
+    if (!bufs.length || bufs.some((b) => !b)) return false;
+
+    const perNoteGain = 0.8;
+
+    for (let i = 0; i < bufs.length; i++) {
+      const start = when0 + i * stepSec;
+      const isLast = i === bufs.length - 1;
+
+      if (isLast) {
+        const playSec = Math.max(0.05, lastTailSec);
+        playBufferWindowed(bufs[i], start, playSec, fadeOutSec, perNoteGain, start + playSec - fadeOutSec);
+      } else {
+        const nextStart = when0 + (i + 1) * stepSec;
+        const playSec = Math.max(0.05, (nextStart - start) + fadeOutSec);
+        playBufferWindowed(bufs[i], start, playSec, fadeOutSec, perNoteGain, nextStart);
+      }
+    }
+
+    return true;
   }
 
-  return true;
-}
+  async function playPitchesWindowed(pitches, playSec = 0.8) {
+    if (pitches.length === 1) {
+      await resumeAudioIfNeeded();
+      const ctx = ensureAudioGraph();
+      if (!ctx) return false;
+      const results = await Promise.all(pitches.map(loadPitchBuffer));
+      if (!results[0]?.buffer) return false;
+      playBufferWindowed(results[0].buffer, ctx.currentTime + 0.03, playSec, 0.1, 0.8);
+      return true;
+    }
+    return playPitchesSequentialOverlap(pitches, 0.3, 0.2, playSec);
+  }
 
-// Backwards-compat: older call sites used playSec as a single "duration" value.
-async function playPitchesWindowed(pitches, playSec = 0.8) {
-  return playPitchesSequentialOverlap(pitches, 0.3, 0.2, playSec);
-}
-
-  // -------------------- Iframe auto-height (kept) --------------------
+  // -------------------- Iframe auto-height --------------------
   function postHeightToParent(height) {
     if (window.parent === window) return;
     window.parent.postMessage(
@@ -314,11 +323,7 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
     if (appRoot) ro.observe(appRoot);
 
     const mo = new MutationObserver(() => send());
-    mo.observe(appRoot || document.body, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
+    mo.observe(appRoot || document.body, { attributes: true, childList: true, subtree: true });
 
     window.__scalesSendHeight = send;
   }
@@ -364,7 +369,7 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
     return p;
   }
 
-  function pcsToAscendingPitchesFromRoot(rootPc, pcs, rootOct = 4, includeOctaveRoot = false) {
+  function pcsToAscendingPitchesFromRoot(rootPc, pcs, rootOct = 3, includeOctaveRoot = false) {
     const ordered = relativeSortFromRoot(rootPc, pcs);
     const rootPitch = pitchFromPcOct(((rootPc % 12) + 12) % 12, rootOct);
 
@@ -375,7 +380,8 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
       const p = i === 0 ? nextPitchAtOrAbove(pc, cursor) : nextPitchAtOrAbove(pc, cursor + 1);
       out.push(p);
       cursor = p;
-    }    if (includeOctaveRoot && out.length) {
+    }    
+    if (includeOctaveRoot && out.length) {
       out.push(out[out.length - 1] + 1); // next semitone then corrected below
       const last = out[out.length - 2];
       const rootPcNorm = ((rootPc % 12) + 12) % 12;
@@ -420,11 +426,13 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
     startPitch,
     octaves,
     includeEndC = false,
+    widthPx = 980,
+    heightPx = 190,
     interactive = true,
     ariaLabel = "Keyboard",
-    highlight = null, // Map<pitch, "hit"|"ok"|"bad">
+    highlight = null, // Map<pitch, "hit"|"ok"|"bad"|"printHit">
     onKeyDown = null,
-    theme = null, // { blackFill, whiteFill, blackStroke, whiteStroke, frameFill }
+    theme = null, 
   }) {
     const lo = startPitch;
     const hi = rangeHiPitch(startPitch, octaves, includeEndC);
@@ -472,18 +480,13 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
       .hit rect { fill: var(--kbdHit) !important; }
       .hitOk rect { fill: var(--kbdHitOk) !important; }
       .hitBad rect { fill: var(--kbdHitBad) !important; }
+      .printHit rect { fill: #d4d4d4 !important; }
     `;
     svg.appendChild(style);
 
     svg.appendChild(
       svgEl("rect", {
-        x: BORDER / 2,
-        y: BORDER / 2,
-        width: outerW - BORDER,
-        height: outerH - BORDER,
-        rx: RADIUS,
-        ry: RADIUS,
-        class: "frame",
+        x: BORDER / 2, y: BORDER / 2, width: outerW - BORDER, height: outerH - BORDER, rx: RADIUS, ry: RADIUS, class: "frame",
       })
     );
 
@@ -504,31 +507,22 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
       if (!c) return base;
       if (c === "ok") return `${base} hitOk`;
       if (c === "bad") return `${base} hitBad`;
+      if (c === "printHit") return `${base} printHit`;
       return `${base} hit`;
     }
 
-    // White keys
     for (let i = 0; i < whitePitches.length; i++) {
       const p = whitePitches[i];
       const x = startX + i * WHITE_W;
 
-      const grp = svgEl("g", {
-        class: `${classForPitch(p, "w")} key`,
-        "data-pitch": String(p),
-        tabindex: interactive ? "0" : "-1",
-      });
-
+      const grp = svgEl("g", { class: `${classForPitch(p, "w")} key`, "data-pitch": String(p), tabindex: interactive ? "0" : "-1" });
       grp.appendChild(svgEl("rect", { x, y: startY, width: WHITE_W, height: WHITE_H }));
       if (interactive && typeof onKeyDown === "function") {
-        grp.addEventListener("pointerdown", (e) => {
-          e.preventDefault();
-          onKeyDown(p, grp);
-        });
+        grp.addEventListener("pointerdown", (e) => { e.preventDefault(); onKeyDown(p, grp); });
       }
       gW.appendChild(grp);
     }
 
-    // Black keys
     const leftPcByBlack = { 1: 0, 3: 2, 6: 5, 8: 7, 10: 9 };
     for (let p = lo; p <= hi; p++) {
       const pc = pcFromPitch(p);
@@ -539,25 +533,16 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
 
       const oct = octFromPitch(p);
       const leftWhitePitch = pitchFromPcOct(leftPc, oct);
-
       const wi = whiteIndexByPitch.get(leftWhitePitch);
       if (wi == null) continue;
 
       const leftX = startX + wi * WHITE_W;
       const x = leftX + WHITE_W - BLACK_W / 2;
 
-      const grp = svgEl("g", {
-        class: `${classForPitch(p, "b")} key`,
-        "data-pitch": String(p),
-        tabindex: interactive ? "0" : "-1",
-      });
+      const grp = svgEl("g", { class: `${classForPitch(p, "b")} key`, "data-pitch": String(p), tabindex: interactive ? "0" : "-1" });
       grp.appendChild(svgEl("rect", { x, y: startY, width: BLACK_W, height: BLACK_H }));
-
       if (interactive && typeof onKeyDown === "function") {
-        grp.addEventListener("pointerdown", (e) => {
-          e.preventDefault();
-          onKeyDown(p, grp);
-        });
+        grp.addEventListener("pointerdown", (e) => { e.preventDefault(); onKeyDown(p, grp); });
       }
       gB.appendChild(grp);
     }
@@ -586,23 +571,18 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
 
   // -------------------- Game state --------------------
   const state = {
-    started: false,
-    submitted: false,
-    questions: [],
-    questionCount: 10,
-    createdOn: null,
-    createdOnText: "",
+    started: false, submitted: false, questions: [], questionCount: 8,
+    createdOn: null, createdOnText: "",
   };
 
   function clampQuestions(n) {
     const v = Number(n);
-    if (!Number.isFinite(v)) return 10;
+    if (!Number.isFinite(v)) return 8;
     return Math.min(12, Math.max(1, Math.round(v)));
   }
 
   function generateQuestions(count) {
     const target = clampQuestions(count);
-
     const pool = [];
     for (let rootPc = 0; rootPc < 12; rootPc++) pool.push({ rootPc });
 
@@ -624,82 +604,45 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
   function resetGameToInitial() {
     stopAllNotes(0.08);
 
-    state.started = false;
-    state.submitted = false;
-    state.questions = [];
-    state.createdOn = null;
-    state.createdOnText = "";
+    state.started = false; state.submitted = false; state.questions = [];
+    state.createdOn = null; state.createdOnText = "";
 
     questionsList.innerHTML = "";
     resultsPanel.classList.add("hidden");
     resultsSummary.textContent = "—";
 
-    submitBtn.disabled = true;
-    downloadTaskBtn.disabled = true;
-    downloadScorecardBtn.disabled = true;
-    resetBtn.disabled = true;
-
-    quizMeta.textContent = "—";
-    beginModal.classList.remove("hidden");
-
-    updatePageAdvice();
-    window.__scalesSendHeight?.();
+    submitBtn.disabled = true; downloadTaskBtn.disabled = true; downloadScorecardBtn.disabled = true; resetBtn.disabled = true;
+    quizMeta.textContent = "—"; beginModal.classList.remove("hidden");
+    updatePageAdvice(); window.__scalesSendHeight?.();
   }
 
   function startGame() {
-    state.started = true;
-    state.submitted = false;
-    state.questions = generateQuestions(state.questionCount);
-
-    state.createdOn = new Date();
-    state.createdOnText = state.createdOn.toLocaleDateString("en-GB");
+    state.started = true; state.submitted = false; state.questions = generateQuestions(state.questionCount);
+    state.createdOn = new Date(); state.createdOnText = state.createdOn.toLocaleDateString("en-GB");
 
     renderQuiz();
 
-    submitBtn.disabled = false;
-    downloadTaskBtn.disabled = false;
-    downloadScorecardBtn.disabled = true;
-    resetBtn.disabled = false;
-
-    beginModal.classList.add("hidden");
-    window.__scalesSendHeight?.();
+    submitBtn.disabled = false; downloadTaskBtn.disabled = false; downloadScorecardBtn.disabled = true; resetBtn.disabled = false;
+    beginModal.classList.add("hidden"); window.__scalesSendHeight?.();
   }
 
-  // -------------------- Begin modal advice --------------------
   function chunkArray(arr, size) {
-    const out = [];
-    const n = Math.max(1, Math.floor(size));
+    const out = []; const n = Math.max(1, Math.floor(size));
     for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
     return out;
   }
 
   function updatePageAdvice() {
-    const qCount = clampQuestions(Number(questionCountSelect?.value ?? 10));
+    const qCount = clampQuestions(Number(questionCountSelect?.value ?? 8));
     state.questionCount = qCount;
 
     const pages = Math.ceil(qCount / TASK_Q_PER_PAGE);
-    const perPage =
-      qCount <= TASK_Q_PER_PAGE
-        ? `${qCount} on 1 page`
-        : `${TASK_Q_PER_PAGE} per page (last page ${qCount % TASK_Q_PER_PAGE || TASK_Q_PER_PAGE})`;
-
-    if (pageAdvice) {
-      pageAdvice.textContent = `Task sheet download printing tip: ${qCount} questions → ${pages} A4 page(s), ${perPage}.`;
-    }
+    const perPage = qCount <= TASK_Q_PER_PAGE ? `${qCount} on 1 page` : `${TASK_Q_PER_PAGE} per page (last page ${qCount % TASK_Q_PER_PAGE || TASK_Q_PER_PAGE})`;
+    if (pageAdvice) pageAdvice.textContent = `PDF tip: ${qCount} questions → ${pages} A4 page(s), ${perPage}.`;
   }
 
   // -------------------- Rendering (Quiz) --------------------
-  function clearQuestionAnswer(q) {
-    q.selectedPitches = [];
-  }
-
-  function questionSelectedPcs(q) {
-    return uniquePcsFromPitches(q.selectedPitches);
-  }
-
-  function syncSlots(q) {
-    // Slots removed; keep for backwards compatibility.
-  }
+  function clearQuestionAnswer(q) { q.selectedPitches = []; }
 
   function renderQuestionKeyboardMount(q, mountEl) {
     const mount = mountEl || $(`${q.id}-kbd-mount`);
@@ -711,39 +654,27 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
     for (const p of q.selectedPitches || []) highlightByPitch.set(p, "hit");
 
     const hl = buildPitchHighlightMapForRange({
-      startPitch,
-      octaves: Q_KBD_OCTAVES,
-      includeEndC: Q_KBD_INCLUDE_END_C,
-      highlightByPitch,
+      startPitch, octaves: Q_KBD_OCTAVES, includeEndC: Q_KBD_INCLUDE_END_C, highlightByPitch,
     });
 
     mount.innerHTML = "";
     mount.appendChild(
       buildKeyboardSvg({
-        startPitch,
-        octaves: Q_KBD_OCTAVES,
-        includeEndC: Q_KBD_INCLUDE_END_C,
-        interactive: !state.submitted,
-        ariaLabel: "Question keyboard",
-        highlight: hl,
+        startPitch, octaves: Q_KBD_OCTAVES, includeEndC: Q_KBD_INCLUDE_END_C, widthPx: 880, heightPx: 165,
+        interactive: !state.submitted, ariaLabel: "Question keyboard", highlight: hl,
         onKeyDown: async (pitch, groupEl) => {
           if (state.submitted) return;
 
-          await resumeAudioIfNeeded();
-          stopAllNotes(0.02);
-          await playPitchesWindowed([pitch], 0.7);
-          flashKeyGroup(groupEl, 180);
+          await resumeAudioIfNeeded(); stopAllNotes(0.02); await playPitchesWindowed([pitch], 0.7); flashKeyGroup(groupEl, 180);
 
           const pitches = Array.isArray(q.selectedPitches) ? q.selectedPitches.slice() : [];
           const idxPitch = pitches.indexOf(pitch);
-
           const rootPc = ((q.rootPc % 12) + 12) % 12;
 
           if (idxPitch >= 0) {
             pitches.splice(idxPitch, 1);
           } else {
             const pc = pcFromPitch(pitch);
-
             if (pc === rootPc && SCALE_ALLOW_OCTAVE_ROOT) {
               const existingRootCount = pitches.filter((p) => pcFromPitch(p) === rootPc).length;
               if (existingRootCount >= 2) return;
@@ -751,14 +682,11 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
               const existingIdx = pitches.findIndex((p) => pcFromPitch(p) === pc);
               if (existingIdx >= 0) pitches.splice(existingIdx, 1);
             }
-
             if (pitches.length >= SCALE_MAX_SELECTIONS) return;
             pitches.push(pitch);
           }
           pitches.sort((a, b) => a - b);
           q.selectedPitches = pitches;
-
-          syncSlots(q);
           renderQuestionKeyboardMount(q, mount);
         },
       })
@@ -766,129 +694,63 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
   }
 
   function renderKeyboardInputForQuestion(q, li) {
-    const wrap = document.createElement("div");
-    wrap.className = "qKbdWrap";
+    const wrap = document.createElement("div"); wrap.className = "qKbdWrap";
+    const mount = document.createElement("div"); mount.className = "qKbdMount mount"; mount.id = `${q.id}-kbd-mount`;
 
-    const mount = document.createElement("div");
-    mount.className = "qKbdMount mount";
-    mount.id = `${q.id}-kbd-mount`;
+    const btnRow = document.createElement("div"); btnRow.className = "qSlotBtnRow"; btnRow.id = `${q.id}-kbd-actions`;
 
-    const btnRow = document.createElement("div");
-    btnRow.className = "qSlotBtnRow";
-    btnRow.id = `${q.id}-kbd-actions`;
-
-    const hearBtn = document.createElement("button");
-    hearBtn.type = "button";
-    hearBtn.textContent = "Hear selection";
-    hearBtn.disabled = state.submitted;
+    const hearBtn = document.createElement("button"); hearBtn.type = "button"; hearBtn.textContent = "Hear selection"; hearBtn.disabled = state.submitted;
     hearBtn.addEventListener("click", async () => {
-      await resumeAudioIfNeeded();
-      stopAllNotes(0.02);
+      await resumeAudioIfNeeded(); stopAllNotes(0.02);
       const pitches = (q.selectedPitches || []).slice().sort((a, b) => a - b);
       if (!pitches.length) return;
       await playPitchesWindowed(pitches, 1.8);
     });
 
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.textContent = "Clear";
-    clearBtn.disabled = state.submitted;
+    const clearBtn = document.createElement("button"); clearBtn.type = "button"; clearBtn.textContent = "Clear"; clearBtn.disabled = state.submitted;
     clearBtn.addEventListener("click", () => {
-      if (state.submitted) return;
-      clearQuestionAnswer(q);
-      syncSlots(q);
-      renderQuestionKeyboardMount(q);
+      if (state.submitted) return; clearQuestionAnswer(q); renderQuestionKeyboardMount(q);
     });
 
-    btnRow.appendChild(hearBtn);
-    btnRow.appendChild(clearBtn);
-
-    wrap.appendChild(mount);
-    wrap.appendChild(btnRow);
-    li.appendChild(wrap);
-
-    syncSlots(q);
+    btnRow.appendChild(hearBtn); btnRow.appendChild(clearBtn);
+    wrap.appendChild(mount); wrap.appendChild(btnRow); li.appendChild(wrap);
     renderQuestionKeyboardMount(q, mount);
   }
 
   function renderQuiz() {
-    questionsList.innerHTML = "";
-
-    quizMeta.textContent = `${state.questions.length} question(s)`;
-
+    questionsList.innerHTML = ""; quizMeta.textContent = "";
     state.questions.forEach((q, index) => {
-      const li = document.createElement("li");
-      li.className = "qCard";
-      li.dataset.qid = q.id;
-
-      const top = document.createElement("div");
-      top.className = "qTop";
-
-      const title = document.createElement("div");
-      title.className = "qTitle";
-      title.textContent = `${index + 1}. ${scaleName(q.rootPc)} scale`;
-
-      const marks = document.createElement("div");
-      marks.className = "qMarks";
-      marks.id = `${q.id}-marks`;
-      marks.textContent = "0 / 1";
-
-      top.appendChild(title);
-      top.appendChild(marks);
-      li.appendChild(top);
+      const li = document.createElement("li"); li.className = "qCard"; li.dataset.qid = q.id;
+      const top = document.createElement("div"); top.className = "qTop";
+      const title = document.createElement("div"); title.className = "qTitle"; title.textContent = `${index + 1}. ${scaleName(q.rootPc)}`;
+      const marks = document.createElement("div"); marks.className = "qMarks"; marks.id = `${q.id}-marks`; marks.textContent = "0 / 1";
+      top.appendChild(title); top.appendChild(marks); li.appendChild(top);
 
       renderKeyboardInputForQuestion(q, li);
 
-      const feedback = document.createElement("div");
-      feedback.className = "qFeedback hidden";
-      feedback.id = `${q.id}-feedback`;
-      li.appendChild(feedback);
-
-      questionsList.appendChild(li);
+      const feedback = document.createElement("div"); feedback.className = "qFeedback hidden"; feedback.id = `${q.id}-feedback`;
+      li.appendChild(feedback); questionsList.appendChild(li);
     });
-
     window.__scalesSendHeight?.();
   }
 
   // -------------------- Results mini keyboards --------------------
   function makeMiniKeyboardBlock({ title, mountId, btnText, onPlay }) {
-    const block = document.createElement("div");
-    block.className = "miniKbdBlock";
-
-    const t = document.createElement("div");
-    t.className = "miniKbdTitle";
-    t.textContent = title;
-
-    const mount = document.createElement("div");
-    mount.className = "mount miniMount";
-    mount.id = mountId;
-
-    const btnRow = document.createElement("div");
-    btnRow.className = "miniBtnRow";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = btnText;
-    btn.addEventListener("click", onPlay);
-    btnRow.appendChild(btn);
-
-    block.appendChild(t);
-    block.appendChild(mount);
-    block.appendChild(btnRow);
+    const block = document.createElement("div"); block.className = "miniKbdBlock";
+    const t = document.createElement("div"); t.className = "miniKbdTitle"; t.textContent = title;
+    const mount = document.createElement("div"); mount.className = "mount miniMount"; mount.id = mountId;
+    const btnRow = document.createElement("div"); btnRow.className = "miniBtnRow";
+    const btn = document.createElement("button"); btn.type = "button"; btn.textContent = btnText; btn.addEventListener("click", onPlay);
+    btnRow.appendChild(btn); block.appendChild(t); block.appendChild(mount); block.appendChild(btnRow);
     return block;
   }
 
   function renderMiniKeyboardsForQuestion(q) {
-    const fb = $(`${q.id}-feedback`);
-    if (!fb) return;
+    const fb = $(`${q.id}-feedback`); if (!fb) return;
+    fb.innerHTML = ""; fb.classList.remove("hidden");
 
-    fb.innerHTML = "";
-    fb.classList.remove("hidden");
-
-    const row = document.createElement("div");
-    row.className = "qFeedbackRow";
-
+    const row = document.createElement("div"); row.className = "qFeedbackRow";
     const miniStartPitch = pitchFromPcOct(0, MINI_KBD_START_OCT);
-
     const correctPcs = q.correctPcs.slice();
     const correctSet = new Set(correctPcs);
 
@@ -896,421 +758,196 @@ async function playPitchesWindowed(pitches, playSec = 0.8) {
     const answeredPcs = uniquePcsFromPitches(answeredPitches);
 
     const answeredHighlightByPitch = new Map();
-    for (const p of answeredPitches) {
-      answeredHighlightByPitch.set(p, correctSet.has(pcFromPitch(p)) ? "ok" : "bad");
-    }
+    for (const p of answeredPitches) answeredHighlightByPitch.set(p, correctSet.has(pcFromPitch(p)) ? "ok" : "bad");
 
-    const correctPitches = pcsToAscendingPitchesFromRoot(q.rootPc, correctPcs, 4, true);
+    const correctPitches = pcsToAscendingPitchesFromRoot(q.rootPc, correctPcs, MINI_KBD_START_OCT, true);
     const correctHighlightByPitch = new Map();
     for (const p of correctPitches) correctHighlightByPitch.set(p, "ok");
 
-    const answeredMountId = `${q.id}-mini-answered`;
-    const correctMountId = `${q.id}-mini-correct`;
+    const answeredMountId = `${q.id}-mini-answered`; const correctMountId = `${q.id}-mini-correct`;
 
     const answeredBlock = makeMiniKeyboardBlock({
-      title: "Your answered notes",
-      mountId: answeredMountId,
-      btnText: "Play Answered Notes",
-      onPlay: async () => {
-        if (!answeredPitches.length) return;
-        await playPitchesWindowed(answeredPitches, 1.8);
-      },
+      title: "Your answered notes", mountId: answeredMountId, btnText: "Play Answered Notes",
+      onPlay: async () => { if (!answeredPitches.length) return; await playPitchesWindowed(answeredPitches, 1.8); },
     });
-
     const correctBlock = makeMiniKeyboardBlock({
-      title: "Correct notes",
-      mountId: correctMountId,
-      btnText: "Play Correct Notes",
-      onPlay: async () => {
-        await playPitchesWindowed(correctPitches, 1.8);
-      },
+      title: "Correct notes", mountId: correctMountId, btnText: "Play Correct Notes",
+      onPlay: async () => { await playPitchesWindowed(correctPitches, 1.8); },
     });
 
-    row.appendChild(answeredBlock);
-    row.appendChild(correctBlock);
-    fb.appendChild(row);
+    row.appendChild(answeredBlock); row.appendChild(correctBlock); fb.appendChild(row);
 
     const chosenText = pcsToPretty(relativeSortFromRoot(q.rootPc, answeredPcs));
     const correctText = pcsToPrettyWithOctave(q.rootPc, correctPcs);
-
-    const line = document.createElement("div");
-    line.className = "qAnswerLine";
+    const line = document.createElement("div"); line.className = "qAnswerLine";
     const okClass = q.marks === 1 ? "ok" : q.marks === 0 ? "bad" : "";
-    line.innerHTML = `
-      <span class="${okClass}">
-        Marks: <strong>${q.marks} / 1</strong>
-      </span>
-      <br>
-      You chose: <strong>${chosenText || "—"}</strong>
-      <br>
-      Correct: <strong>${correctText}</strong>
-    `;
+    line.innerHTML = `<span class="${okClass}">Marks: <strong>${q.marks} / 1</strong></span><br>You chose: <strong>${chosenText || "—"}</strong><br>Correct: <strong>${correctText}</strong>`;
     fb.appendChild(line);
 
-    const answeredMount = $(answeredMountId);
-    const correctMount = $(correctMountId);
-
-    if (answeredMount) {
-      answeredMount.innerHTML = "";
-      answeredMount.appendChild(
-        buildKeyboardSvg({
-          startPitch: miniStartPitch,
-          octaves: MINI_KBD_OCTAVES,
-          includeEndC: MINI_KBD_INCLUDE_END_C,
-          interactive: false,
-          ariaLabel: "Answered notes keyboard",
-          highlight: buildPitchHighlightMapForRange({
-            startPitch: miniStartPitch,
-            octaves: MINI_KBD_OCTAVES,
-            includeEndC: MINI_KBD_INCLUDE_END_C,
-            highlightByPitch: answeredHighlightByPitch,
-          }),
-        })
-      );
-    }
-
-    if (correctMount) {
-      correctMount.innerHTML = "";
-      correctMount.appendChild(
-        buildKeyboardSvg({
-          startPitch: miniStartPitch,
-          octaves: MINI_KBD_OCTAVES,
-          includeEndC: MINI_KBD_INCLUDE_END_C,
-          interactive: false,
-          ariaLabel: "Correct notes keyboard",
-          highlight: buildPitchHighlightMapForRange({
-            startPitch: miniStartPitch,
-            octaves: MINI_KBD_OCTAVES,
-            includeEndC: MINI_KBD_INCLUDE_END_C,
-            highlightByPitch: correctHighlightByPitch,
-          }),
-        })
-      );
-    }
+    const answeredMount = $(answeredMountId); const correctMount = $(correctMountId);
+    if (answeredMount) answeredMount.appendChild(buildKeyboardSvg({ startPitch: miniStartPitch, octaves: MINI_KBD_OCTAVES, includeEndC: MINI_KBD_INCLUDE_END_C, widthPx: 520, heightPx: 120, interactive: false, ariaLabel: "Answered notes keyboard", highlight: buildPitchHighlightMapForRange({ startPitch: miniStartPitch, octaves: MINI_KBD_OCTAVES, includeEndC: MINI_KBD_INCLUDE_END_C, highlightByPitch: answeredHighlightByPitch }) }));
+    if (correctMount) correctMount.appendChild(buildKeyboardSvg({ startPitch: miniStartPitch, octaves: MINI_KBD_OCTAVES, includeEndC: MINI_KBD_INCLUDE_END_C, widthPx: 520, heightPx: 120, interactive: false, ariaLabel: "Correct notes keyboard", highlight: buildPitchHighlightMapForRange({ startPitch: miniStartPitch, octaves: MINI_KBD_OCTAVES, includeEndC: MINI_KBD_INCLUDE_END_C, highlightByPitch: correctHighlightByPitch }) }));
   }
 
-  // -------------------- Marking --------------------
   function markAll() {
-    state.submitted = true;
-
-    submitBtn.disabled = true;
-
-    let total = 0;
-    const max = state.questions.length;
+    state.submitted = true; submitBtn.disabled = true;
+    let total = 0; const max = state.questions.length;
 
     for (const q of state.questions) {
       const correctSet = new Set(q.correctPcs);
       const chosenSet = new Set(uniquePcsFromPitches(q.selectedPitches));
-
       const isCorrect = q.correctPcs.every((pc) => chosenSet.has(pc)) && chosenSet.size === correctSet.size;
-      const marks = isCorrect ? 1 : 0;
-      q.marks = marks;
-      total += marks;
-
-      const marksEl = $(`${q.id}-marks`);
-      if (marksEl) marksEl.textContent = `${marks} / 1`;
-
-      const actions = $(`${q.id}-kbd-actions`);
-      if (actions) actions.remove();
-
-      const mount = $(`${q.id}-kbd-mount`);
-      if (mount) mount.remove();
-
+      const marks = isCorrect ? 1 : 0; q.marks = marks; total += marks;
+      const marksEl = $(`${q.id}-marks`); if (marksEl) marksEl.textContent = `${marks} / 1`;
+      const actions = $(`${q.id}-kbd-actions`); if (actions) actions.remove();
+      const mount = $(`${q.id}-kbd-mount`); if (mount) mount.remove();
       renderMiniKeyboardsForQuestion(q);
     }
 
-    resultsSummary.innerHTML = `
-      Total: <strong>${total} / ${max}</strong>
-      <br>
-      Percentage: <strong>${Math.round((total / max) * 1000) / 10}%</strong>
-    `;
-    resultsPanel.classList.remove("hidden");
-
-    downloadScorecardBtn.disabled = false;
-    window.__scalesSendHeight?.();
+    resultsSummary.innerHTML = `Total: <strong>${total} / ${max}</strong><br>Percentage: <strong>${Math.round((total / max) * 1000) / 10}%</strong>`;
+    resultsPanel.classList.remove("hidden"); downloadScorecardBtn.disabled = false; window.__scalesSendHeight?.();
   }
 
   // -------------------- PDF helpers --------------------
   function addCanvasToPdfPageCentered({ canvas, pdf, marginPt }) {
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-
-    const usableW = pageW - marginPt * 2;
-    const usableH = pageH - marginPt * 2;
-
+    const pageW = pdf.internal.pageSize.getWidth(); const pageH = pdf.internal.pageSize.getHeight();
+    const usableW = pageW - marginPt * 2; const usableH = pageH - marginPt * 2;
     const scale = Math.min(usableW / canvas.width, usableH / canvas.height);
-    const drawW = canvas.width * scale;
-    const drawH = canvas.height * scale;
-
-    const x = (pageW - drawW) / 2;
-    const y = (pageH - drawH) / 2;
-
-    const imgData = canvas.toDataURL("image/png");
-    pdf.addImage(imgData, "PNG", x, y, drawW, drawH);
+    const drawW = canvas.width * scale; const drawH = canvas.height * scale;
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", (pageW - drawW) / 2, (pageH - drawH) / 2, drawW, drawH);
   }
 
   async function renderHtmlPagesToPdf({ hostEl, pages, filename }) {
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-
-    hostEl.innerHTML = "";
-    hostEl.classList.remove("hidden");
-
+    const { jsPDF } = window.jspdf; const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    hostEl.innerHTML = ""; hostEl.classList.remove("hidden");
     for (let i = 0; i < pages.length; i++) {
-      hostEl.innerHTML = "";
-      hostEl.appendChild(pages[i]);
-
+      hostEl.innerHTML = ""; hostEl.appendChild(pages[i]);
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-      const canvas = await window.html2canvas(hostEl, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-      });
-
+      const canvas = await window.html2canvas(hostEl, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
       if (i > 0) pdf.addPage("a4", "portrait");
       addCanvasToPdfPageCentered({ canvas, pdf, marginPt: PDF_MARGIN_PT });
     }
-
-    pdf.save(filename);
-
-    hostEl.classList.add("hidden");
-    hostEl.innerHTML = "";
+    pdf.save(filename); hostEl.classList.add("hidden"); hostEl.innerHTML = "";
   }
 
-  // -------------------- Task sheet PDF (single column, 6 per page, images) --------------------
   function buildTaskSheetPages() {
-    const loadedAt = state.createdOnText ? `Created On: ${state.createdOnText}` : "";
     const totalQ = state.questions.length;
-
     const chunks = chunkArray(state.questions, TASK_Q_PER_PAGE);
     const printStartPitch = pitchFromPcOct(0, TASK_KBD_START_OCT);
 
     return chunks.map((chunk, pageIndex) => {
-      const page = document.createElement("div");
+      const page = document.createElement("div"); 
       page.className = "printPage";
+      page.style.position = "relative";
 
-      const header = document.createElement("div");
-      header.className = "sheetHeader";
-      header.innerHTML = `
-        <picture>
-          <source media="(max-width: 520px)" srcset="images/titlewrapped.png" />
-          <img class="sheetHeroImg" src="images/titledownload.png" alt="Major Scales Quiz" />
-        </picture>
-        <div class="sheetSubtitle">The Major Scale</div>
-      `;
-
-      const meta = document.createElement("div");
-      meta.className = "sheetMeta";
-      meta.textContent = `${loadedAt ? loadedAt + " • " : ""}${totalQ} questions • Page ${pageIndex + 1} / ${chunks.length}`;
-
-      const hint = document.createElement("div");
-      hint.className = "sheetHint";
-      hint.textContent =
-        "Colour in or mark the notes of the scales for each question on the keyboard images — you can place the scale on any octave.";
-
-      const list = document.createElement("ol");
-      list.className = "sheetList";
+      const titleImg = document.createElement("img"); titleImg.className = "sheetTitleImage"; titleImg.src = "images/titledownload.png"; titleImg.alt = "Major Scales";
+      const title = document.createElement("div"); title.className = "sheetTitle"; title.textContent = "Name: .........................................        Date: ...................";
+      const list = document.createElement("ol"); list.className = "sheetList";
 
       chunk.forEach((q, localIdx) => {
-        const number = pageIndex * TASK_Q_PER_PAGE + localIdx + 1;
-
-        const item = document.createElement("li");
-        item.className = "sheetQ";
-
-        const qname = document.createElement("div");
-        qname.className = "sheetQName";
-        qname.textContent = `${number}. ${scaleName(q.rootPc)} scale`;
-
-        const kbdBox = document.createElement("div");
-        kbdBox.className = "sheetKbd";
-
-        const mount = document.createElement("div");
-        mount.className = "mount";
-
-        mount.appendChild(
-          buildKeyboardSvg({
-            startPitch: printStartPitch,
-            octaves: TASK_KBD_OCTAVES,
-            includeEndC: TASK_KBD_INCLUDE_END_C,
-            interactive: false,
-            ariaLabel: "Printable keyboard",
-            theme: {
-              frameFill: "#fff",
-              whiteFill: "#fff",
-              whiteStroke: "#000",
-              blackFill: "#fff",
-              blackStroke: "#000",
-            },
-          })
-        );
-
-        kbdBox.appendChild(mount);
-        item.appendChild(qname);
-        item.appendChild(kbdBox);
-        list.appendChild(item);
+        const item = document.createElement("li"); item.className = "sheetQ";
+        const qname = document.createElement("div"); qname.className = "sheetQName"; qname.textContent = `${pageIndex * TASK_Q_PER_PAGE + localIdx + 1}. ${scaleName(q.rootPc)}`;
+        const kbdBox = document.createElement("div"); kbdBox.className = "sheetKbd";
+        const mount = document.createElement("div"); mount.className = "mount";
+        mount.appendChild(buildKeyboardSvg({ startPitch: printStartPitch, octaves: TASK_KBD_OCTAVES, includeEndC: TASK_KBD_INCLUDE_END_C, widthPx: 700, heightPx: 150, interactive: false, ariaLabel: "Printable keyboard", theme: { frameFill: "#fff", whiteFill: "#fff", whiteStroke: "#000", blackFill: "#fff", blackStroke: "#000" } }));
+        kbdBox.appendChild(mount); item.appendChild(qname); item.appendChild(kbdBox); list.appendChild(item);
       });
 
-      page.appendChild(header);
-      page.appendChild(meta);
-      page.appendChild(hint);
-      page.appendChild(list);
+      page.appendChild(titleImg); page.appendChild(title); 
+      const hint = document.createElement("div"); hint.className = "sheetHint"; hint.textContent = "Colour in / mark the correct notes on the keyboards for each question.";
+      page.appendChild(hint); page.appendChild(list);
+
+      const footer = document.createElement("div");
+      footer.style.cssText = "position: absolute; bottom: 0px; left: 0; right: 0; text-align: center; font-size: 12px; opacity: 0.8;";
+      footer.textContent = `${totalQ} questions • Page ${pageIndex + 1} / ${chunks.length}`;
+      page.appendChild(footer);
+
       return page;
     });
   }
 
   async function downloadTaskSheetPdf() {
     if (!state.started || !state.questions.length) return;
-
-    const pages = buildTaskSheetPages();
     const fileStamp = new Date().toISOString().slice(0, 10);
-    await renderHtmlPagesToPdf({
-      hostEl: taskSheetTemplate,
-      pages,
-      filename: `Major Scales Task Sheet (${fileStamp}).pdf`,
-    });
+    await renderHtmlPagesToPdf({ hostEl: taskSheetTemplate, pages: buildTaskSheetPages(), filename: `Major Scales Task Sheet (${fileStamp}).pdf` });
   }
 
-  // -------------------- Scorecard PDF --------------------
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    }[c]));
-  }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c])); }
 
   function buildScorecardPages(playerName, total, max) {
     const loadedAt = state.createdOnText ? `Created On: ${state.createdOnText}` : "";
     const totalQ = state.questions.length;
-    const chunks = chunkArray(state.questions, 20);
+    const chunks = chunkArray(state.questions, 24);
 
     return chunks.map((chunk, pageIndex) => {
-      const page = document.createElement("div");
-      page.className = "printPage";
-
-      const header = document.createElement("div");
-      header.className = "sheetHeader";
-      header.innerHTML = `
-        <picture>
-          <source media="(max-width: 520px)" srcset="images/titlewrapped.png" />
-          <img class="sheetHeroImg" src="images/title.png" alt="Major Scales Quiz" />
-        </picture>
-      `;
-
-      const meta = document.createElement("div");
-      meta.className = "sheetMeta";
-      meta.textContent = `${loadedAt ? loadedAt + " • " : ""}${totalQ} questions • Page ${pageIndex + 1} / ${chunks.length}`;
-
-      page.appendChild(header);
-      page.appendChild(meta);
+      const page = document.createElement("div"); page.className = "printPage";
+      const titleImg = document.createElement("img"); titleImg.className = "sheetTitleImage"; titleImg.src = "images/titledownload.png"; titleImg.alt = "Major Scales";
+      const title = document.createElement("div"); title.className = "sheetTitle"; title.textContent = "Major Scales — Scorecard";
+      const meta = document.createElement("div"); meta.className = "sheetMeta"; meta.textContent = `${loadedAt ? loadedAt + " • " : ""}${totalQ} questions • Page ${pageIndex + 1} / ${chunks.length}`;
+      page.appendChild(titleImg); page.appendChild(title); page.appendChild(meta);
 
       if (pageIndex === 0) {
-        const top = document.createElement("div");
-        top.className = "sheetQ";
-        top.innerHTML = `
-          <div class="sheetQName">Name: ${escapeHtml(playerName)}</div>
-          <div style="font-weight:900; text-align:center;">
-            Score: ${total} / ${max} (${Math.round((total / max) * 1000) / 10}%)
-          </div>
-        `;
+        const top = document.createElement("div"); top.className = "sheetQ";
+        top.style.marginBottom = "10px";
+        top.innerHTML = `<div class="sheetQName">Name: ${escapeHtml(playerName)}</div><div style="font-weight:900;">Score: ${total} / ${max} (${Math.round((total / max) * 1000) / 10}%)</div>`;
         page.appendChild(top);
       }
 
-      const list = document.createElement("ol");
-      list.className = "sheetList";
-
-      const startIdx = pageIndex * 20;
+      const list = document.createElement("ol"); list.className = "sheetList";
+      const startIdx = pageIndex * 24;
       chunk.forEach((q, localIdx) => {
         const idx = startIdx + localIdx;
-
-        const item = document.createElement("li");
-        item.className = "sheetQ";
-
+        const item = document.createElement("li"); item.className = "sheetQ";
         const answeredPcs = uniquePcsFromPitches(q.selectedPitches);
         const chosen = pcsToPretty(relativeSortFromRoot(q.rootPc, answeredPcs));
         const correct = pcsToPrettyWithOctave(q.rootPc, q.correctPcs);
 
         item.innerHTML = `
           <div class="sheetQName">${idx + 1}. ${scaleName(q.rootPc)} scale — ${q.marks} / 1</div>
-          <div style="font-weight:800; font-size:12px; opacity:.9; line-height:1.45; text-align:center;">
+          <div style="font-weight:800; font-size:12px; opacity:.9; line-height:1.45;">
             Your answer: <strong>${escapeHtml(chosen || "—")}</strong><br>
             Correct: <strong>${escapeHtml(correct)}</strong>
-          </div>
-        `;
+          </div>`;
         list.appendChild(item);
       });
-
-      page.appendChild(list);
-      return page;
+      page.appendChild(list); return page;
     });
   }
 
   async function downloadScorecardPdf() {
-    if (!state.submitted) {
-      alert("Submit your answers first, then download the scorecard.");
-      return;
-    }
-
+    if (!state.submitted) { alert("Submit your answers first, then download the scorecard."); return; }
     const prev = localStorage.getItem("scales_player_name") || "";
     const name = (window.prompt("Enter your name for the scorecard:", prev) ?? "").trim();
     const playerName = name || "Player";
     if (name) localStorage.setItem("scales_player_name", name);
-
     const total = state.questions.reduce((a, q) => a + (q.marks || 0), 0);
     const max = state.questions.length;
-
-    const pages = buildScorecardPages(playerName, total, max);
     const fileStamp = new Date().toISOString().slice(0, 10);
-    await renderHtmlPagesToPdf({
-      hostEl: scorecardTemplate,
-      pages,
-      filename: `Major Scales Scorecard (${playerName}) (${fileStamp}).pdf`,
-    });
+    await renderHtmlPagesToPdf({ hostEl: scorecardTemplate, pages: buildScorecardPages(playerName, total, max), filename: `Major Scales Scorecard (${playerName}) (${fileStamp}).pdf` });
   }
 
-  // -------------------- Events --------------------
+  function initTopKeyboard() {
+    topKeyboardMount.innerHTML = "";
+    topKeyboardMount.appendChild(buildKeyboardSvg({
+      startPitch: pitchFromPcOct(0, KBD_START_OCT), octaves: KBD_OCTAVES, widthPx: 1100, heightPx: 220, interactive: true, ariaLabel: "Interactive top keyboard",
+      onKeyDown: async (pitch, groupEl) => { await resumeAudioIfNeeded(); stopAllNotes(0.02); await playPitchesWindowed([pitch], 0.9); flashKeyGroup(groupEl, 260); },
+    }));
+  }
+
   function bindEvents() {
     questionCountSelect?.addEventListener("change", updatePageAdvice);
-
-    beginBtn.addEventListener("click", async () => {
-      await resumeAudioIfNeeded();
-      startGame();
-    });
-
-    infoBtn.addEventListener("click", () => infoModal.classList.remove("hidden"));
-    infoOk.addEventListener("click", () => infoModal.classList.add("hidden"));
-    infoModal.addEventListener("click", (e) => {
-      if (e.target === infoModal) infoModal.classList.add("hidden");
-    });
-
-    downloadTaskBtn.addEventListener("click", downloadTaskSheetPdf);
-    downloadScorecardBtn.addEventListener("click", downloadScorecardPdf);
-
-    submitBtn.addEventListener("click", () => {
-      if (!state.started || state.submitted) return;
-      markAll();
-    });
-
-    resetBtn.addEventListener("click", resetGameToInitial);
-    resetBtn2.addEventListener("click", resetGameToInitial);
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        if (!infoModal.classList.contains("hidden")) infoModal.classList.add("hidden");
-      }
-    });
+    beginBtn.addEventListener("click", async () => { playUiSound("select1.mp3"); await resumeAudioIfNeeded(); startGame(); });
+    infoBtn.addEventListener("click", () => { playUiSound("select1.mp3"); infoModal.classList.remove("hidden"); });
+    infoOk.addEventListener("click", () => { playUiSound("back1.mp3"); infoModal.classList.add("hidden"); });
+    infoModal.addEventListener("click", (e) => { if (e.target === infoModal) infoModal.classList.add("hidden"); });
+    downloadTaskBtn.addEventListener("click", () => { playUiSound("select1.mp3"); downloadTaskSheetPdf(); });
+    downloadScorecardBtn.addEventListener("click", () => { playUiSound("select1.mp3"); downloadScorecardPdf(); });
+    submitBtn.addEventListener("click", () => { if (!state.started || state.submitted) return; markAll(); });
+    resetBtn.addEventListener("click", () => { playUiSound("select1.mp3"); resetGameToInitial(); });
+    resetBtn2.addEventListener("click", () => { playUiSound("select1.mp3"); resetGameToInitial(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !infoModal.classList.contains("hidden")) infoModal.classList.add("hidden"); });
   }
 
-  // -------------------- Init --------------------
-  function init() {
-    setupIframeAutoHeight();
-    bindEvents();
-    updatePageAdvice();
-    resetGameToInitial();
-  }
-
+  function init() { setupIframeAutoHeight(); initTopKeyboard(); bindEvents(); updatePageAdvice(); resetGameToInitial(); }
   init();
 })();
